@@ -1,5 +1,7 @@
 # HungryHelmsman_Reproduce
 
+Reproduce for the CTF challenge [37C3 Potluck CTF-Qualifier-2023/Misc/Hungry Helmsman](https://ctftime.org/task/27382)
+
 ## prepare environment
 
 ```
