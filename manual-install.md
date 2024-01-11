@@ -163,6 +163,7 @@ give user
 
 * list namespace
 * pods
+* svc
 
 ```
 cat << EOF | kubectl apply -f -
