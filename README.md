@@ -3,9 +3,9 @@
 ## prepare environment
 
 ```
-kind create cluster
-kubectl apply -f challenge.yaml
-cat << EOF > kubeconfig-ctf-player.yaml
+$ kind create cluster
+$ kubectl apply -f challenge.yaml
+$ cat << EOF > kubeconfig-ctf-player.yaml
 apiVersion: v1
 clusters:
 - cluster:
