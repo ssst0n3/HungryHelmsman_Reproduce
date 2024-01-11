@@ -47,17 +47,31 @@ create cluster
 kind create cluster
 ```
 
-create user
+## create namespace with PSP/PSA
+
+```
+cat << EOF | kubectl apply -f -
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: flag-reciever
+  labels:
+    pod-security.kubernetes.io/enforce: "restricted"
+EOF
+
+kubectl create namespace flag-sender
+```
+
+## create user
 
 ```
 kubectl create serviceaccount ctf-player
-token=$(kubectl create token ctf-player)
 cat << EOF > kubeconfig-ctf-player.yaml
 apiVersion: v1
 clusters:
 - cluster:
     insecure-skip-tls-verify: true
-    server: https://127.0.0.1:43129
+    server: $(kubectl config view --minify -o jsonpath='{.clusters[0].cluster.server}')
   name: ctf-cluster
 contexts:
 - context:
@@ -70,32 +84,102 @@ preferences: {}
 users:
 - name: ctf-player
   user:
-    token: $token
+    token: $(kubectl create token ctf-player)
 EOF
 ```
 
-create namespace
+## create pod
 
 ```
-kubectl create namespace flag-reciever
-kubectl create namespace flag-sender
+kubectl create secret generic flag --from-literal=flag=potluck{kubernetes_can_be_a_bit_weird} --namespace=flag-sender
+cat << EOF | kubectl apply -f -
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: flag-sender
+  namespace: flag-sender
+  labels:
+    app: flag-sender
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: flag-sender
+  template:
+    metadata:
+      labels:
+        app: flag-sender
+    spec:
+      containers:
+      - name: container
+        image: busybox
+        imagePullPolicy: IfNotPresent
+        command:
+        - sh
+        args:
+        - -c
+        - while true; do echo \$FLAG | nc 1.1.1.1 80 || continue; echo 'Flag Send'; sleep 10; done
+        env:
+        - name: FLAG
+          valueFrom:
+            secretKeyRef:
+              name: flag
+              key: flag
+      restartPolicy: Always
+      serviceAccountName: default
+      dnsPolicy: ClusterFirst
+      securityContext: {}
+EOF
+```
+
+## create network policy
+
+```
+cat << EOF | kubectl apply -f -
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: flag-reciever
+  namespace: flag-reciever
+spec:
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          ns: flag-sender
+      podSelector:
+        matchLabels:
+          app: flag-sender
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  - Egress
+EOF
 ```
 
 ## setup RBAC
 
-give user list namespace
+give user 
+
+* list namespace
+* pods
 
 ```
 cat << EOF | kubectl apply -f -
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  namespace: default
   name: ctf-player
 rules:
 - apiGroups: [""]
   resources: ["namespaces"]
-  verbs: ["list", "get"]
+  verbs: ["list"]
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["list"]
+- apiGroups: [""]
+  resources: ["services"]
+  verbs: ["list"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -109,5 +193,105 @@ roleRef:
   kind: ClusterRole
   name: ctf-player
   apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  namespace: flag-reciever
+  name: ctf-player
+rules:
+- apiGroups: [""]
+  resources: ["pods.*"]
+  verbs: ["create", "delete"]
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get", "create", "delete"]
+- apiGroups: [""]
+  resources: ["pods/log"]
+  verbs: ["get"]
+- apiGroups: [""]
+  resources: ["services.*"]
+  verbs: ["create", "delete"]
+- apiGroups: [""]
+  resources: ["services"]
+  verbs: ["get", "create", "delete"]
+- apiGroups: ["networking.k8s.io"]
+  resources: ["networkpolicies"]
+  verbs: ["list", "get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ctf-player
+  namespace: flag-reciever
+subjects:
+- kind: ServiceAccount
+  name: ctf-player
+  namespace: default
+roleRef:
+  kind: Role
+  name: ctf-player
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  namespace: flag-sender
+  name: ctf-player
+rules:
+- apiGroups: [""]
+  resources: ["pods/log"]
+  verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ctf-player
+  namespace: flag-sender
+subjects:
+- kind: ServiceAccount
+  name: ctf-player
+  namespace: default
+roleRef:
+  kind: Role
+  name: ctf-player
+  apiGroup: rbac.authorization.k8s.io
+EOF
+```
+
+## Clean
+
+```
+kubectl get ns --no-headers -o custom-columns=:metadata.name | xargs -n 1 kubectl delete sa ctf-player -n
+kubectl get ns --no-headers -o custom-columns=:metadata.name | xargs -n 1 kubectl delete role ctf-player -n
+kubectl get ns --no-headers -o custom-columns=:metadata.name | xargs -n 1 kubectl delete rolebinding ctf-player -n
+kubectl delete clusterrole ctf-player
+kubectl delete clusterrolebinding ctf-player
+```
+
+## all-in-one
+
+```
+kind create cluster
+kubectl apply -f challenge.yaml
+cat << EOF > kubeconfig-ctf-player.yaml
+apiVersion: v1
+clusters:
+- cluster:
+    insecure-skip-tls-verify: true
+    server: $(kubectl config view --minify -o jsonpath='{.clusters[0].cluster.server}')
+  name: ctf-cluster
+contexts:
+- context:
+    cluster: ctf-cluster
+    user: ctf-player
+  name: ctf-cluster
+current-context: ctf-cluster
+kind: Config
+preferences: {}
+users:
+- name: ctf-player
+  user:
+    token: $(kubectl create token ctf-player)
 EOF
 ```
