@@ -1,9 +1,9 @@
 
-# create namespace flag-reciever
+# create namespace flag-receiver
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: flag-reciever
+  name: flag-receiver
   labels:
     pod-security.kubernetes.io/enforce: "restricted"
 ---
@@ -71,8 +71,8 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: flag-reciever
-  namespace: flag-reciever
+  name: flag-receiver
+  namespace: flag-receiver
 spec:
   ingress:
   - from:
@@ -119,7 +119,7 @@ roleRef:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  namespace: flag-reciever
+  namespace: flag-receiver
   name: ctf-player
 rules:
 - apiGroups: [""]
@@ -145,7 +145,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: ctf-player
-  namespace: flag-reciever
+  namespace: flag-receiver
 subjects:
 - kind: ServiceAccount
   name: ctf-player
